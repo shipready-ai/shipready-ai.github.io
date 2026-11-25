@@ -1,0 +1,88 @@
+{
+  "brand": "ShipReady AI",
+  "site_url": "https://shipready-ai.github.io",
+  "github_owner": "shipready-ai",
+  "author": "Hoang Tran",
+  "tagline": "Production-ready Claude AI projects you can deploy in an afternoon",
+  "bundle": {
+    "name": "All 5 core kits bundle",
+    "price": "$59",
+    "url": "https://kimhoang36.gumroad.com/l/claude-kits-bundle",
+    "img": "bundle"
+  },
+  "kits": [
+    {
+      "slug": "receptionist",
+      "name": "AI Phone Receptionist Kit",
+      "price": "$19",
+      "img": "receptionist",
+      "url": "https://kimhoang36.gumroad.com/l/ai-phone-receptionist-kit",
+      "free_repo": "ai-phone-receptionist-claude",
+      "summary": "Answers a real phone number for a clinic, salon or shop: books appointments, takes messages, puts urgent callers through. Claude + Deepgram + Twilio, with a call dashboard.",
+      "article": "build-ai-phone-receptionist-claude"
+    },
+    {
+      "slug": "concierge",
+      "name": "Vacation Rental AI Concierge Kit",
+      "price": "$19",
+      "img": "concierge",
+      "url": "https://kimhoang36.gumroad.com/l/vacation-rental-concierge-kit",
+      "free_repo": "vacation-rental-ai-concierge",
+      "summary": "A 24/7 guest assistant for Airbnb hosts and homestays: answers in any language, stay codes for door and wifi, host inbox, Telegram and email alerts, reply drafts.",
+      "article": "ai-guest-assistant-airbnb-hosts-claude"
+    },
+    {
+      "slug": "mcp",
+      "name": "MCP Server Starter Kit",
+      "price": "$19",
+      "img": "mcp-server",
+      "url": "https://kimhoang36.gumroad.com/l/mcp-server-kit",
+      "free_repo": "claude-mcp-server-starter",
+      "summary": "A production remote MCP server in Python: API keys with read and write scopes, rate limits, audit log, HTTPS and a one-command AWS deploy.",
+      "article": "remote-mcp-server-python-claude"
+    },
+    {
+      "slug": "docsift",
+      "name": "DocSift: Document Extraction Kit",
+      "price": "$19",
+      "img": "doc-extraction",
+      "url": "https://kimhoang36.gumroad.com/l/invoice-extraction-kit",
+      "free_repo": "claude-invoice-extraction",
+      "summary": "Invoices, receipts and VAT invoices to clean data: upload, review side by side, total checks, CSV and Excel export, webhooks. About 3 cents per document.",
+      "article": "extract-invoice-data-pdf-to-json-claude"
+    },
+    {
+      "slug": "docchat",
+      "name": "AWS Document Chatbot Kit",
+      "price": "$19",
+      "img": "doc-chatbot",
+      "url": "https://kimhoang36.gumroad.com/l/phwyiv",
+      "free_repo": "rag-document-chatbot",
+      "summary": "Chat with your PDFs with cited answers. Passwords, rate limits, a daily spend cap, HTTPS and a one-command AWS deploy.",
+      "article": "rag-pdf-chatbot-citations-claude-langchain",
+      "owner": "hoangtrankim"
+    },
+    {
+      "slug": "leads",
+      "name": "Lead Research Agent Kit",
+      "price": "$19",
+      "img": "lead-research",
+      "url": "https://kimhoang36.gumroad.com/l/lead-research-kit",
+      "free_repo": "lead-research-agents",
+      "summary": "Three LangGraph agents research a company, write a personal outreach email and review it. Batch CSV of hundreds of leads, about $0.23 per lead.",
+      "article": null,
+      "owner": "hoangtrankim"
+    },
+    {
+      "slug": "support",
+      "name": "Customer Support Agent Kit",
+      "price": "$19",
+      "img": "support-agent",
+      "url": "https://kimhoang36.gumroad.com/l/support-agent-kit",
+      "free_repo": "support-agent",
+      "summary": "A tool-using support agent with a one-line chat widget, order lookups, and a team inbox where staff take over and hand back. About $0.05 per conversation.",
+      "article": null,
+      "owner": "hoangtrankim"
+    }
+  ]
+}

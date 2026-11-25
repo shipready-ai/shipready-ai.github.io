@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to build a remote MCP server in Python for Claude</title>
+<meta name="description" content="A step-by-step guide to a remote Model Context Protocol server in Python with the official SDK and streamable HTTP, connected to Claude Code and Claude Desktop, plus what you need before putting it on the internet.">
+<link rel="canonical" href="https://shipready-ai.github.io/guides/remote-mcp-server-python-claude/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="How to build a remote MCP server in Python for Claude">
+<meta property="og:description" content="A step-by-step guide to a remote Model Context Protocol server in Python with the official SDK and streamable HTTP, connected to Claude Code and Claude Desktop, plus what you need before putting it on the internet.">
+<meta property="og:url" content="https://shipready-ai.github.io/guides/remote-mcp-server-python-claude/">
+<meta property="og:image" content="https://shipready-ai.github.io/img/mcp-server.webp">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23128a78'/%3E%3Cpath d='M9 17l5 5 9-11' stroke='white' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "How to build a remote MCP server in Python for Claude", "description": "A step-by-step guide to a remote Model Context Protocol server in Python with the official SDK and streamable HTTP, connected to Claude Code and Claude Desktop, plus what you need before putting it on the internet.", "datePublished": "2026-11-25", "dateModified": "2026-11-25", "author": {"@type": "Person", "name": "Hoang Tran"}, "image": "https://shipready-ai.github.io/img/mcp-server.webp", "mainEntityOfPage": "https://shipready-ai.github.io/guides/remote-mcp-server-python-claude/"}</script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">ShipReady AI</a>
+  <nav><a href="/#kits">Kits</a><a href="/#guides">Guides</a><a href="https://github.com/shipready-ai">GitHub</a></nav>
+</div></header>
+<main class="wrap article">
+  <p class="crumbs"><a href="/">Home</a> / <a href="/#guides">Guides</a></p>
+  <h1>How to build a remote MCP server in Python for Claude</h1>
+  <p class="meta">Hoang Tran · 2026-11-25</p>
+  <p>The Model Context Protocol (MCP) is how you give Claude access to your own data and systems: your database, your CRM, your internal API. You write a small server that exposes <strong>tools</strong>, and Claude Code, Claude Desktop or the Claude API connect to it and call those tools when they need them.</p>
+<p>This guide builds a <strong>remote</strong> MCP server in Python, the kind that runs over HTTP and that several people or apps can connect to, not only a local script. It uses the official MCP Python SDK and the streamable HTTP transport. The whole server is about 150 lines.</p>
+<p>The finished code is free on GitHub: <a href="https://github.com/shipready-ai/claude-mcp-server-starter">claude-mcp-server-starter</a>.</p>
+<h2>Local (stdio) vs remote (HTTP) servers</h2>
+<ul>
+<li>A <strong>stdio</strong> server is started by the client as a child process. Fine for a personal tool on your laptop.</li>
+<li>A <strong>remote</strong> server listens on a URL like <code>https://mcp.example.com/mcp</code>. Teammates, a Claude API app and Claude Code on several machines can all use the same server, and it can sit next to the database it needs.</li>
+</ul>
+<p>Our server supports both: <code>python server.py</code> for HTTP, <code>python server.py --stdio</code> for stdio.</p>
+<h2>Step 1: install</h2>
+<pre><code class="language-bash">pip install &quot;mcp==2.3.0&quot; uvicorn
+</code></pre>
+<h2>Step 2: create the server and a tool</h2>
+<pre><code class="language-python">from typing import Annotated
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
+from pydantic import Field
+
+server = MCPServer(&quot;notes&quot;, instructions=&quot;Tools for the user's personal notes.&quot;)
+READ = ToolAnnotations(read_only_hint=True, idempotent_hint=True)
+
+@server.tool(title=&quot;Search notes&quot;, annotations=READ)
+def search_notes(query: Annotated[str, Field(description=&quot;Words to look for in titles and text&quot;)]) -&gt; list[dict]:
+    &quot;&quot;&quot;Find notes whose title or text contains every word in the query (case-insensitive).&quot;&quot;&quot;
+    words = query.lower().split()
+    return [summary(n) for n in load() if all(w in f&quot;{n['title']} {n['text']}&quot;.lower() for w in words)]
+</code></pre>
+<p>The SDK turns the type hints, <code>Field</code> descriptions and docstring into the tool's JSON schema. <strong>That text is all Claude knows about your tool</strong>, so write it for Claude: what it returns and when to use it.</p>
+<p><code>read_only_hint</code> tells clients this tool only looks things up. Clients can use that to skip confirmation prompts for safe calls and ask before changes.</p>
+<h2>Step 3: errors Claude can recover from</h2>
+<pre><code class="language-python">@server.tool(title=&quot;Read a note&quot;, annotations=READ)
+def get_note(note_id: int) -&gt; dict:
+    &quot;&quot;&quot;Return one note in full.&quot;&quot;&quot;
+    for n in load():
+        if n[&quot;id&quot;] == note_id:
+            return n
+    raise ToolError(f&quot;No note with id {note_id}. Use search_notes or list_notes to find ids.&quot;)
+</code></pre>
+<p>A stack trace teaches Claude nothing. A sentence that says what went wrong and what to do next lets it fix its own mistake in the next call.</p>
+<h2>Step 4: serve it over streamable HTTP</h2>
+<pre><code class="language-python">app = server.streamable_http_app(stateless_http=True, json_response=True, host=&quot;127.0.0.1&quot;)
+uvicorn.run(app, host=&quot;127.0.0.1&quot;, port=8000)
+</code></pre>
+<p><strong>Stateless mode</strong> means every request stands alone. You can restart, redeploy or run several workers, and connected clients never notice. For tool servers that don't push notifications, it's the simplest choice.</p>
+<h2>Step 5: connect Claude</h2>
+<p>Claude Code:</p>
+<pre><code class="language-bash">claude mcp add --transport http notes http://localhost:8000/mcp
+</code></pre>
+<p>Then ask "What notes do I have about goals?" and watch Claude call <code>search_notes</code> and <code>get_note</code>.</p>
+<p>Claude Desktop (local, stdio), in <code>claude_desktop_config.json</code>:</p>
+<pre><code class="language-json">{&quot;mcpServers&quot;: {&quot;notes&quot;: {&quot;command&quot;: &quot;/path/to/.venv/bin/python&quot;, &quot;args&quot;: [&quot;/path/to/server.py&quot;, &quot;--stdio&quot;]}}}
+</code></pre>
+<h2>Before you put it on the internet</h2>
+<p>The server above has <strong>no authentication</strong>. On a public URL, anyone who finds it can call your tools. A production MCP server needs:</p>
+<ol>
+<li><strong>API keys per person or app</strong>, stored hashed, shown once, revocable one at a time.</li>
+<li><strong>Scopes.</strong> A key made for reading must never be able to change data, however Claude is prompted. Enforce it in code on every tool call.</li>
+<li><strong>Rules in code, not in the prompt.</strong> For example, an order can move from paid to shipped but never from cancelled to paid.</li>
+<li><strong>Rate limits per key</strong>, so a runaway agent loop can't hammer your database or your API bill.</li>
+<li><strong>An audit log</strong> of every call: which key, which tool, the arguments, success or error, duration.</li>
+<li><strong>DNS rebinding protection</strong> (only answer for your own host name) and <strong>HTTPS</strong>.</li>
+<li>A way to <strong>wrap an existing REST API</strong> without giving Claude your API token.</li>
+<li>A repeatable deploy, backups, and a check that the server works end to end after each deploy.</li>
+</ol>
+<h2>Get the full kit</h2>
+<p>The <strong><a href="https://kimhoang36.gumroad.com/l/mcp-server-kit?utm_source=site&amp;utm_medium=web&amp;utm_campaign=remote-mcp-server-python-claude">MCP Server Starter Kit</a></strong> ($19) is all of that, built and tested: API keys with read and write scopes, a rate limit and audit log on every tool, a usage report, 8 example tools over a demo shop database, a template for wrapping any REST API, Docker with Caddy HTTPS, and a one-command AWS deploy that prints your URL and first key. It includes guides for Claude Code, Claude Desktop and the Claude API MCP connector.</p>
+<p>Or start free with the <a href="https://github.com/shipready-ai/claude-mcp-server-starter">lite server on GitHub</a>.</p>
+  <aside class="cta">
+    <img src="/img/mcp-server.webp" alt="" width="1200" height="675" loading="lazy">
+    <div>
+      <h2>MCP Server Starter Kit</h2>
+      <p>A production remote MCP server in Python: API keys with read and write scopes, rate limits, audit log, HTTPS and a one-command AWS deploy.</p>
+      <a class="btn" href="https://kimhoang36.gumroad.com/l/mcp-server-kit?utm_source=site&utm_medium=web&utm_campaign=remote-mcp-server-python-claude">Get the kit · $19</a>
+      <a class="ghost" href="https://github.com/shipready-ai/claude-mcp-server-starter">Free version on GitHub</a>
+    </div>
+  </aside>
+</main>
+<footer class="foot"><div class="wrap">
+  <p>ShipReady AI by Hoang Tran. Independent starter kits for building with the Claude API. Not affiliated with Anthropic.</p>
+  <p>Questions about a kit? Reply to your Gumroad receipt email. We answer within 2 working days.</p>
+</div></footer>
+</body>
+</html>

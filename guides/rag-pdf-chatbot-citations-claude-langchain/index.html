@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build a PDF chatbot with citations using Claude and LangChain (RAG)</title>
+<meta name="description" content="A retrieval-augmented generation (RAG) chatbot that answers questions about your PDFs and cites the exact page for every statement. FastAPI, LangChain, ChromaDB, local embeddings and Claude, step by step.">
+<link rel="canonical" href="https://shipready-ai.github.io/guides/rag-pdf-chatbot-citations-claude-langchain/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Build a PDF chatbot with citations using Claude and LangChain (RAG)">
+<meta property="og:description" content="A retrieval-augmented generation (RAG) chatbot that answers questions about your PDFs and cites the exact page for every statement. FastAPI, LangChain, ChromaDB, local embeddings and Claude, step by step.">
+<meta property="og:url" content="https://shipready-ai.github.io/guides/rag-pdf-chatbot-citations-claude-langchain/">
+<meta property="og:image" content="https://shipready-ai.github.io/img/doc-chatbot.webp">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23128a78'/%3E%3Cpath d='M9 17l5 5 9-11' stroke='white' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Build a PDF chatbot with citations using Claude and LangChain (RAG)", "description": "A retrieval-augmented generation (RAG) chatbot that answers questions about your PDFs and cites the exact page for every statement. FastAPI, LangChain, ChromaDB, local embeddings and Claude, step by step.", "datePublished": "2026-11-25", "dateModified": "2026-11-25", "author": {"@type": "Person", "name": "Hoang Tran"}, "image": "https://shipready-ai.github.io/img/doc-chatbot.webp", "mainEntityOfPage": "https://shipready-ai.github.io/guides/rag-pdf-chatbot-citations-claude-langchain/"}</script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">ShipReady AI</a>
+  <nav><a href="/#kits">Kits</a><a href="/#guides">Guides</a><a href="https://github.com/shipready-ai">GitHub</a></nav>
+</div></header>
+<main class="wrap article">
+  <p class="crumbs"><a href="/">Home</a> / <a href="/#guides">Guides</a></p>
+  <h1>Build a PDF chatbot with citations using Claude and LangChain (RAG)</h1>
+  <p class="meta">Hoang Tran · 2026-11-25</p>
+  <p>"Chat with your PDFs" is the most requested AI feature in companies: employee handbooks, contracts, product manuals, policies. A chatbot that answers confidently but wrongly is worse than none, though. The answer has to <strong>show where it came from</strong>, so people can check it.</p>
+<p>This guide walks through a retrieval-augmented generation (RAG) chatbot where every statement carries a citation like <code>[1]</code> that opens the exact passage, file and page. The finished code is free on GitHub: <a href="https://github.com/hoangtrankim/rag-document-chatbot">rag-document-chatbot</a> (FastAPI backend, Next.js UI, Docker Compose).</p>
+<h2>How RAG works, in four steps</h2>
+<ol>
+<li><strong>Ingest.</strong> Extract the text of each PDF page, split it into chunks, turn each chunk into an embedding vector, store the vectors.</li>
+<li><strong>Retrieve.</strong> For a question, embed it the same way and find the closest chunks.</li>
+<li><strong>Answer.</strong> Send Claude the question plus those chunks, numbered, with instructions to answer only from them and cite the numbers.</li>
+<li><strong>Show.</strong> Stream the answer to the browser and turn each <code>[n]</code> into a link to its source.</li>
+</ol>
+<h2>Step 1: page-aware chunking</h2>
+<pre><code class="language-python">from pypdf import PdfReader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+for page_number, page in enumerate(PdfReader(path).pages, start=1):
+    for chunk in splitter.split_text(page.extract_text() or &quot;&quot;):
+        docs.append(Document(page_content=chunk, metadata={&quot;filename&quot;: name, &quot;page&quot;: page_number}))
+</code></pre>
+<p>Split <strong>per page</strong>, not per document, and keep the page number in the metadata. That's what makes "page 12" citations possible.</p>
+<h2>Step 2: local embeddings, no extra API key</h2>
+<pre><code class="language-python">from fastembed import TextEmbedding
+model = TextEmbedding(&quot;BAAI/bge-small-en-v1.5&quot;)
+</code></pre>
+<p>FastEmbed runs a small embedding model on the CPU, so ingest costs nothing per page and needs no second API key. The vectors go into ChromaDB with cosine distance.</p>
+<h2>Step 3: retrieve and number the sources</h2>
+<pre><code class="language-python">results = store.similarity_search_with_score(question, k=5)
+sources = &quot;\n&quot;.join(
+    f'&lt;source number=&quot;{i}&quot; file=&quot;{doc.metadata[&quot;filename&quot;]}&quot; page=&quot;{doc.metadata[&quot;page&quot;]}&quot;&gt;\n{doc.page_content}\n&lt;/source&gt;'
+    for i, (doc, _) in enumerate(results, start=1)
+)
+</code></pre>
+<h2>Step 4: a prompt that forces grounding</h2>
+<pre><code>You answer questions using only the document excerpts provided in &lt;sources&gt;.
+- Base every statement on the sources. If they do not contain the answer, say you could not find it
+  in the uploaded documents and suggest what to upload or ask instead.
+- Cite sources inline with their number in square brackets, like [1] or [2][3], right after the
+  statement they support.
+- Answer in the same language as the question.
+</code></pre>
+<p>"Say you could not find it" is the most important line. Without it, the model fills gaps from general knowledge, and users can't tell which parts came from their documents.</p>
+<h2>Step 5: stream it</h2>
+<pre><code class="language-python">async with client.messages.stream(model=&quot;claude-opus-5-5&quot;, system=SYSTEM_PROMPT,
+                                  messages=messages, max_tokens=4000) as stream:
+    async for text in stream.text_stream:
+        yield f&quot;data: {json.dumps({'type': 'token', 'text': text})}\n\n&quot;
+</code></pre>
+<p>Send the sources first as a Server-Sent Event, then the tokens. The UI can render citation links the moment <code>[1]</code> appears.</p>
+<h2>What changes in production</h2>
+<p>The demo works on a laptop. Putting it in front of a company's staff or a client's customers adds:</p>
+<ol>
+<li><strong>Access control.</strong> An admin password for uploads and an access password (or sign-in) for readers.</li>
+<li><strong>Cost control.</strong> A per-IP rate limit and a <strong>daily spend cap</strong>, so one curious user or a bot can't run up the bill, plus a cost log so you can price it for clients (about $10 per 1,000 questions with Claude Opus measured).</li>
+<li><strong>HTTPS</strong> and a production Docker setup.</li>
+<li><strong>Backups and restores</strong> of the vector store and uploaded files.</li>
+<li><strong>A repeatable deploy</strong> and a check that it works after each deploy.</li>
+</ol>
+<h2>Get the full kit</h2>
+<p>The <strong><a href="https://kimhoang36.gumroad.com/l/phwyiv?utm_source=site&amp;utm_medium=web&amp;utm_campaign=rag-pdf-chatbot-citations-claude-langchain">AWS Document Chatbot Starter Kit</a></strong> ($19) adds all of that to this project: admin and access passwords, rate limit, daily spend cap and <code>/usage</code> report, Caddy HTTPS, backup and restore scripts, a deploy check, a cost sheet, and a one-command AWS deploy (with a free HTTPS name when you don't have a domain yet).</p>
+<p>Or start free with the <a href="https://github.com/hoangtrankim/rag-document-chatbot">open-source chatbot on GitHub</a>.</p>
+  <aside class="cta">
+    <img src="/img/doc-chatbot.webp" alt="" width="1200" height="675" loading="lazy">
+    <div>
+      <h2>AWS Document Chatbot Kit</h2>
+      <p>Chat with your PDFs with cited answers. Passwords, rate limits, a daily spend cap, HTTPS and a one-command AWS deploy.</p>
+      <a class="btn" href="https://kimhoang36.gumroad.com/l/phwyiv?utm_source=site&utm_medium=web&utm_campaign=rag-pdf-chatbot-citations-claude-langchain">Get the kit · $19</a>
+      <a class="ghost" href="https://github.com/hoangtrankim/rag-document-chatbot">Free version on GitHub</a>
+    </div>
+  </aside>
+</main>
+<footer class="foot"><div class="wrap">
+  <p>ShipReady AI by Hoang Tran. Independent starter kits for building with the Claude API. Not affiliated with Anthropic.</p>
+  <p>Questions about a kit? Reply to your Gumroad receipt email. We answer within 2 working days.</p>
+</div></footer>
+</body>
+</html>

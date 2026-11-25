@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extract invoice data from PDF to JSON with Claude (Python)</title>
+<meta name="description" content="Turn invoice PDFs and phone photos into validated JSON with Claude structured outputs and a Pydantic schema. No OCR library and no template per vendor. Includes cost per document.">
+<link rel="canonical" href="https://shipready-ai.github.io/guides/extract-invoice-data-pdf-to-json-claude/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Extract invoice data from PDF to JSON with Claude (Python)">
+<meta property="og:description" content="Turn invoice PDFs and phone photos into validated JSON with Claude structured outputs and a Pydantic schema. No OCR library and no template per vendor. Includes cost per document.">
+<meta property="og:url" content="https://shipready-ai.github.io/guides/extract-invoice-data-pdf-to-json-claude/">
+<meta property="og:image" content="https://shipready-ai.github.io/img/doc-extraction.webp">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23128a78'/%3E%3Cpath d='M9 17l5 5 9-11' stroke='white' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Extract invoice data from PDF to JSON with Claude (Python)", "description": "Turn invoice PDFs and phone photos into validated JSON with Claude structured outputs and a Pydantic schema. No OCR library and no template per vendor. Includes cost per document.", "datePublished": "2026-11-25", "dateModified": "2026-11-25", "author": {"@type": "Person", "name": "Hoang Tran"}, "image": "https://shipready-ai.github.io/img/doc-extraction.webp", "mainEntityOfPage": "https://shipready-ai.github.io/guides/extract-invoice-data-pdf-to-json-claude/"}</script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">ShipReady AI</a>
+  <nav><a href="/#kits">Kits</a><a href="/#guides">Guides</a><a href="https://github.com/shipready-ai">GitHub</a></nav>
+</div></header>
+<main class="wrap article">
+  <p class="crumbs"><a href="/">Home</a> / <a href="/#guides">Guides</a></p>
+  <h1>Extract invoice data from PDF to JSON with Claude (Python)</h1>
+  <p class="meta">Hoang Tran · 2026-11-25</p>
+  <p>Typing invoices into a spreadsheet or accounting system is slow, boring and error-prone. Old-style automation needed an OCR engine plus a template for every vendor's layout, and broke whenever a vendor changed theirs. A modern vision-capable model reads invoices the way a person does: any layout, scanned or digital, any language.</p>
+<p>This guide builds an invoice extractor in one Python file. You give it a PDF or a photo; it gives back JSON that always matches your schema. The finished code is free on GitHub: <a href="https://github.com/shipready-ai/claude-invoice-extraction">claude-invoice-extraction</a>.</p>
+<h2>Step 1: describe the data you want with Pydantic</h2>
+<pre><code class="language-python">from pydantic import BaseModel, Field
+
+class LineItem(BaseModel):
+    description: str
+    quantity: float | None = None
+    unit_price: float | None = None
+    amount: float | None = None
+
+class Invoice(BaseModel):
+    vendor_name: str | None = Field(description=&quot;Who issued the invoice&quot;)
+    customer_name: str | None = Field(description=&quot;Who the invoice is billed to&quot;)
+    invoice_number: str | None = None
+    invoice_date: str | None = Field(description=&quot;YYYY-MM-DD&quot;)
+    due_date: str | None = Field(description=&quot;YYYY-MM-DD&quot;)
+    currency: str | None = Field(description=&quot;ISO code such as USD, EUR, VND&quot;)
+    subtotal: float | None = None
+    tax: float | None = None
+    total: float | None = None
+    line_items: list[LineItem] = []
+</code></pre>
+<p>Every field is optional on purpose. If a due date isn't printed, you want <code>null</code>, not a guess.</p>
+<h2>Step 2: send the file</h2>
+<p>PDFs go to Claude as a <code>document</code> block, images as an <code>image</code> block, both base64-encoded:</p>
+<pre><code class="language-python">data = base64.standard_b64encode(path.read_bytes()).decode()
+block = {&quot;type&quot;: &quot;document&quot;, &quot;source&quot;: {&quot;type&quot;: &quot;base64&quot;, &quot;media_type&quot;: &quot;application/pdf&quot;, &quot;data&quot;: data}}
+</code></pre>
+<p>Claude reads each PDF page as both text and an image, so scanned invoices and photos work too.</p>
+<h2>Step 3: ask for structured output</h2>
+<pre><code class="language-python">response = client.beta.messages.parse(
+    model=&quot;claude-opus-5-5&quot;,
+    max_tokens=16000,
+    system=SYSTEM,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: [block, {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;Fill in the invoice fields.&quot;}]}],
+    output_format=Invoice,
+    output_config={&quot;effort&quot;: &quot;low&quot;},
+)
+invoice = response.parsed_output   # an Invoice object, already validated
+</code></pre>
+<p><code>output_format=Invoice</code> turns your Pydantic model into a JSON schema and <strong>constrains Claude's answer to it</strong>. You never write a regex over the reply or retry because a bracket was missing.</p>
+<h2>Step 4: a prompt that says "copy, don't guess"</h2>
+<pre><code>You copy details from invoices into fields, exactly as printed.
+- Copy, do not guess. If a field is not on the document, use null.
+- Numbers are plain numbers with no currency signs or thousands separators.
+- Dates are YYYY-MM-DD.
+- List every line item in order, including discounts as negative amounts.
+</code></pre>
+<p>For other countries, add the local rules. For Vietnamese invoices, for example, "1.234.567" means 1234567 and dates are day first.</p>
+<h2>The result</h2>
+<pre><code class="language-json">{
+  &quot;vendor_name&quot;: &quot;Northwind Design Studio&quot;,
+  &quot;invoice_number&quot;: &quot;NW-2026-0117&quot;,
+  &quot;invoice_date&quot;: &quot;2026-02-12&quot;,
+  &quot;currency&quot;: &quot;USD&quot;,
+  &quot;subtotal&quot;: 2070.0,
+  &quot;tax&quot;: 186.3,
+  &quot;total&quot;: 2256.3,
+  &quot;line_items&quot;: [
+    {&quot;description&quot;: &quot;Logo design, 3 concepts&quot;, &quot;quantity&quot;: 1, &quot;unit_price&quot;: 1200.0, &quot;amount&quot;: 1200.0},
+    {&quot;description&quot;: &quot;Brand guidelines (hours)&quot;, &quot;quantity&quot;: 6, &quot;unit_price&quot;: 95.0, &quot;amount&quot;: 570.0}
+  ]
+}
+</code></pre>
+<p>Run many files at once with <code>python extract.py invoices/*.pdf --out results.jsonl</code>.</p>
+<h2>What it costs</h2>
+<p>A one-page invoice costs roughly 1 to 3 US cents with <code>claude-opus-5-5</code> at low effort. For a business processing 500 invoices a month, that's under $15 in model costs, against hours of manual typing.</p>
+<h2>From a script to a tool a team trusts</h2>
+<p>Extraction is the easy part. Teams that process invoices every day also need:</p>
+<ol>
+<li><strong>Checks.</strong> Do the line items add up to the subtotal? Does subtotal plus tax equal the total? Is the tax ID valid? Anything that fails goes to a person.</li>
+<li><strong>Uncertain fields.</strong> Blurry or handwritten values flagged, so the reviewer looks only where it matters.</li>
+<li><strong>A review screen.</strong> The document on one side, editable fields on the other, approve with one click.</li>
+<li><strong>More document types.</strong> Receipts, Vietnamese VAT invoices (hóa đơn GTGT), and your own.</li>
+<li><strong>Exports and integrations.</strong> CSV and Excel for the accountant, a webhook into the accounting system on approval.</li>
+<li><strong>A queue</strong>, so 200 uploads at month end don't time out, plus a cost log and a daily spend cap.</li>
+</ol>
+<h2>Get the full kit</h2>
+<p><strong><a href="https://kimhoang36.gumroad.com/l/invoice-extraction-kit?utm_source=site&amp;utm_medium=web&amp;utm_campaign=extract-invoice-data-pdf-to-json-claude">DocSift: Document Extraction Kit</a></strong> ($19) is that whole app: upload and queue, side-by-side review, total checks and uncertain-field flags, invoice, receipt and Vietnamese VAT invoice types (add your own in one file), CSV and Excel export, webhooks, passwords, a cost log, and a one-command AWS deploy. Measured cost: about 3 cents per document.</p>
+<p>Or start free with the <a href="https://github.com/shipready-ai/claude-invoice-extraction">one-file extractor on GitHub</a>.</p>
+  <aside class="cta">
+    <img src="/img/doc-extraction.webp" alt="" width="1200" height="675" loading="lazy">
+    <div>
+      <h2>DocSift: Document Extraction Kit</h2>
+      <p>Invoices, receipts and VAT invoices to clean data: upload, review side by side, total checks, CSV and Excel export, webhooks. About 3 cents per document.</p>
+      <a class="btn" href="https://kimhoang36.gumroad.com/l/invoice-extraction-kit?utm_source=site&utm_medium=web&utm_campaign=extract-invoice-data-pdf-to-json-claude">Get the kit · $19</a>
+      <a class="ghost" href="https://github.com/shipready-ai/claude-invoice-extraction">Free version on GitHub</a>
+    </div>
+  </aside>
+</main>
+<footer class="foot"><div class="wrap">
+  <p>ShipReady AI by Hoang Tran. Independent starter kits for building with the Claude API. Not affiliated with Anthropic.</p>
+  <p>Questions about a kit? Reply to your Gumroad receipt email. We answer within 2 working days.</p>
+</div></footer>
+</body>
+</html>

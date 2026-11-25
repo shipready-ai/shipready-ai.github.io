@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to build an AI phone receptionist with Claude (Python booking agent)</title>
+<meta name="description" content="Build the brain of an AI receptionist that answers questions, checks free times and books appointments with Claude tool use, then learn what it takes to put it on a real phone line.">
+<link rel="canonical" href="https://shipready-ai.github.io/guides/build-ai-phone-receptionist-claude/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="How to build an AI phone receptionist with Claude (Python booking agent)">
+<meta property="og:description" content="Build the brain of an AI receptionist that answers questions, checks free times and books appointments with Claude tool use, then learn what it takes to put it on a real phone line.">
+<meta property="og:url" content="https://shipready-ai.github.io/guides/build-ai-phone-receptionist-claude/">
+<meta property="og:image" content="https://shipready-ai.github.io/img/receptionist.webp">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23128a78'/%3E%3Cpath d='M9 17l5 5 9-11' stroke='white' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "How to build an AI phone receptionist with Claude (Python booking agent)", "description": "Build the brain of an AI receptionist that answers questions, checks free times and books appointments with Claude tool use, then learn what it takes to put it on a real phone line.", "datePublished": "2026-11-25", "dateModified": "2026-11-25", "author": {"@type": "Person", "name": "Hoang Tran"}, "image": "https://shipready-ai.github.io/img/receptionist.webp", "mainEntityOfPage": "https://shipready-ai.github.io/guides/build-ai-phone-receptionist-claude/"}</script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">ShipReady AI</a>
+  <nav><a href="/#kits">Kits</a><a href="/#guides">Guides</a><a href="https://github.com/shipready-ai">GitHub</a></nav>
+</div></header>
+<main class="wrap article">
+  <p class="crumbs"><a href="/">Home</a> / <a href="/#guides">Guides</a></p>
+  <h1>How to build an AI phone receptionist with Claude (Python booking agent)</h1>
+  <p class="meta">Hoang Tran · 2026-11-25</p>
+  <p>Small businesses miss a lot of calls. A dental clinic is busy with a patient, a salon owner has wet hands, a repair shop is under a car. Every missed call is a booking that goes to a competitor. An AI receptionist that picks up, answers the common questions and books the appointment is one of the most useful things you can build with a large language model today.</p>
+<p>This guide builds the part that matters most: the <strong>conversation brain</strong>. It answers only from the business's own information, checks real free times, books appointments without double-booking, and takes a message when it can't help. We'll build it in text first, in one Python file, with the Anthropic SDK. At the end you'll see what it takes to put a voice and a real phone number on it.</p>
+<p>The finished code is free on GitHub: <a href="https://github.com/shipready-ai/ai-phone-receptionist-claude">ai-phone-receptionist-claude</a>.</p>
+<h2>The design in one sentence</h2>
+<p><strong>The model decides when to use a tool. Your code decides whether it is allowed.</strong></p>
+<p>Claude is good at conversation: understanding "can I come in Monday morning, but not too early?", asking one question at a time, reading back a booking. It should not be the thing that decides which times are free or whether a slot was already taken. That logic lives in plain Python, behind tools.</p>
+<h2>Step 1: describe the business</h2>
+<p>Everything the receptionist may say comes from one file:</p>
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;Bright Smile Dental&quot;,
+  &quot;info&quot;: &quot;Family dental clinic at 12 Tran Phu Street. Check-up and cleaning 450,000 VND. Filling from 600,000 VND...&quot;,
+  &quot;hours&quot;: {&quot;mon&quot;: &quot;08:00-17:00&quot;, &quot;sat&quot;: &quot;08:00-12:00&quot;, &quot;sun&quot;: &quot;&quot;},
+  &quot;appointment_minutes&quot;: 30,
+  &quot;booking_days_ahead&quot;: 14
+}
+</code></pre>
+<p>For a real client this is a 15-minute conversation: services and prices, address, parking, payment, opening hours, appointment length.</p>
+<h2>Step 2: three tools</h2>
+<pre><code class="language-python">TOOLS = [
+    _tool(&quot;check_availability&quot;,
+          &quot;List the free appointment start times on one day. Call it before offering times; never guess.&quot;,
+          {&quot;date&quot;: DATE}, [&quot;date&quot;]),
+    _tool(&quot;book_appointment&quot;,
+          &quot;Book an appointment. Only after the caller agreed to a time check_availability listed, &quot;
+          &quot;and confirmed the date, time and name you read back.&quot;,
+          {&quot;date&quot;: DATE, &quot;time&quot;: ..., &quot;name&quot;: ..., &quot;phone&quot;: ..., &quot;service&quot;: ...},
+          [&quot;date&quot;, &quot;time&quot;, &quot;name&quot;, &quot;phone&quot;, &quot;service&quot;]),
+    _tool(&quot;take_message&quot;,
+          &quot;Save a message for the owner when you cannot answer or only the owner can decide.&quot;,
+          {&quot;name&quot;: ..., &quot;phone&quot;: ..., &quot;reason&quot;: ...}, [&quot;name&quot;, &quot;phone&quot;, &quot;reason&quot;]),
+]
+</code></pre>
+<p>Two details make these reliable:</p>
+<ul>
+<li>Each tool has <code>"strict": True</code> and <code>additionalProperties: false</code>, so the arguments Claude sends always match the schema. No parsing surprises.</li>
+<li>The <strong>descriptions carry the rules</strong>. "Call it before offering times; never guess" is what stops the model from inventing a 3 pm slot.</li>
+</ul>
+<h2>Step 3: free times come from code</h2>
+<pre><code class="language-python">def free_times(self, day):
+    hours = self.biz[&quot;hours&quot;].get(DAYS[day.weekday()], &quot;&quot;)
+    if not hours:
+        return []          # closed
+    ...                    # every 30-minute start between open and close
+    taken = {b[&quot;time&quot;] for b in self.bookings() if b[&quot;date&quot;] == day.isoformat()}
+    return [t for t in slots if t not in taken]
+</code></pre>
+<p>And when Claude calls <code>book_appointment</code>, the slot is <strong>checked again</strong> before saving. Two callers asking for the same time can't both get it, whatever the model believes.</p>
+<h2>Step 4: the prompt</h2>
+<p>The system prompt is short and specific:</p>
+<ul>
+<li>Reply in the caller's language, one or two short sentences, one question at a time, no lists or markdown (it will be spoken aloud later).</li>
+<li>Answer only from the business info and opening hours. If you don't know, take a message.</li>
+<li>Discounts, refunds and complaints: don't promise anything, take a message.</li>
+<li>To book: ask what it is for and which day, check availability, offer two or three times, read back day, time and name, wait for a yes, then book.</li>
+</ul>
+<p>The rules and business info are the same on every turn, so they're sent with <code>cache_control</code>. After the first reply, Claude reads them from the prompt cache, which is cheaper and faster.</p>
+<h2>Step 5: the tool loop</h2>
+<pre><code class="language-python">with client.beta.messages.stream(model=MODEL, system=system, tools=TOOLS,
+                                 messages=messages, output_config={&quot;effort&quot;: &quot;low&quot;}, ...) as stream:
+    for text in stream.text_stream:
+        print(text, end=&quot;&quot;)
+    response = stream.get_final_message()
+
+messages.append({&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: response.content})
+for block in response.content:
+    if block.type == &quot;tool_use&quot;:
+        result, is_error = run_tool(calendar, block.name, block.input)
+        ...
+</code></pre>
+<p>Streaming matters even in text: on a phone, the voice can start speaking the first sentence while Claude writes the second. Low effort keeps replies fast, which matters more on a call than anywhere else.</p>
+<p>A real conversation looks like this:</p>
+<pre><code>Caller: Hi, how much is a cleaning?
+Receptionist: A check-up and cleaning is 450,000 dong. Would you like to book one?
+Caller: Yes, Monday morning please.
+Receptionist: On Monday I have 8:00, 8:30 or 9:00. Which suits you?
+Caller: 8:30. I'm Lan, 0901 234 567.
+Receptionist: So that's Monday the 30th at 8:30 for Lan. Shall I book it?
+Caller: Yes.
+Receptionist: Done, you're booked for Monday at 8:30.
+</code></pre>
+<h2>From text to a real phone line</h2>
+<p>The text version is the right place to get the behaviour right. Turning it into a receptionist that answers a real number adds a different set of problems:</p>
+<ol>
+<li><strong>A phone line.</strong> Twilio gives you a number and streams the call audio to your server over a WebSocket (Media Streams). You need to verify Twilio's request signature so nobody else can drive your bot.</li>
+<li><strong>Speech to text and back.</strong> A streaming speech recogniser (for example Deepgram Nova) turns the caller's voice into text as they speak, and a text-to-speech voice reads Claude's reply. You speak sentence by sentence, as soon as each one is ready.</li>
+<li><strong>Interruptions.</strong> When the caller starts talking, the receptionist must stop speaking immediately and listen. That means clearing the audio already sent to the phone.</li>
+<li><strong>Transfers and alerts.</strong> Urgent callers get put through to the owner's mobile, and the owner gets a Telegram or email summary after important calls.</li>
+<li><strong>A dashboard.</strong> Owners want to see every call, the transcript, bookings, messages and what each minute costs.</li>
+<li><strong>Deployment.</strong> HTTPS, a public URL for Twilio's webhook, backups, and a cost you can quote to a client (roughly 4 to 6 US cents a minute for Claude, speech and the phone line together).</li>
+</ol>
+<h2>Get the full kit</h2>
+<p>If you want all of that already built and tested, the <strong><a href="https://kimhoang36.gumroad.com/l/ai-phone-receptionist-kit?utm_source=site&amp;utm_medium=web&amp;utm_campaign=build-ai-phone-receptionist-claude">AI Phone Receptionist Kit</a></strong> ($19) is a complete FastAPI + Next.js app: Twilio and Deepgram voice with interruptions, the same booking brain, Google Calendar, SMS confirmations, owner alerts, a call dashboard with transcripts and costs, browser test calls with your microphone, and a one-command AWS deploy. You own all the code, so there is no per-minute platform fee on top.</p>
+<p>Or start free with the <a href="https://github.com/shipready-ai/ai-phone-receptionist-claude">text version on GitHub</a> and build the rest yourself.</p>
+  <aside class="cta">
+    <img src="/img/receptionist.webp" alt="" width="1200" height="675" loading="lazy">
+    <div>
+      <h2>AI Phone Receptionist Kit</h2>
+      <p>Answers a real phone number for a clinic, salon or shop: books appointments, takes messages, puts urgent callers through. Claude + Deepgram + Twilio, with a call dashboard.</p>
+      <a class="btn" href="https://kimhoang36.gumroad.com/l/ai-phone-receptionist-kit?utm_source=site&utm_medium=web&utm_campaign=build-ai-phone-receptionist-claude">Get the kit · $19</a>
+      <a class="ghost" href="https://github.com/shipready-ai/ai-phone-receptionist-claude">Free version on GitHub</a>
+    </div>
+  </aside>
+</main>
+<footer class="foot"><div class="wrap">
+  <p>ShipReady AI by Hoang Tran. Independent starter kits for building with the Claude API. Not affiliated with Anthropic.</p>
+  <p>Questions about a kit? Reply to your Gumroad receipt email. We answer within 2 working days.</p>
+</div></footer>
+</body>
+</html>
