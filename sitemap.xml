@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://shipready-ai.github.io/</loc><lastmod>2026-11-25</lastmod></url>
-  <url><loc>https://shipready-ai.github.io/guides/build-ai-phone-receptionist-claude/</loc><lastmod>2026-11-25</lastmod></url>
-  <url><loc>https://shipready-ai.github.io/guides/ai-guest-assistant-airbnb-hosts-claude/</loc><lastmod>2026-11-25</lastmod></url>
-  <url><loc>https://shipready-ai.github.io/guides/remote-mcp-server-python-claude/</loc><lastmod>2026-11-25</lastmod></url>
-  <url><loc>https://shipready-ai.github.io/guides/extract-invoice-data-pdf-to-json-claude/</loc><lastmod>2026-11-25</lastmod></url>
-  <url><loc>https://shipready-ai.github.io/guides/rag-pdf-chatbot-citations-claude-langchain/</loc><lastmod>2026-11-25</lastmod></url>
+  <url><loc>https://shipready-ai.github.io/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://shipready-ai.github.io/guides/build-ai-phone-receptionist-claude/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://shipready-ai.github.io/guides/ai-guest-assistant-airbnb-hosts-claude/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://shipready-ai.github.io/guides/remote-mcp-server-python-claude/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://shipready-ai.github.io/guides/extract-invoice-data-pdf-to-json-claude/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://shipready-ai.github.io/guides/rag-pdf-chatbot-citations-claude-langchain/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://shipready-ai.github.io/guides/langgraph-multi-agent-lead-research-claude/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://shipready-ai.github.io/guides/ai-customer-support-agent-tool-use-claude/</loc><lastmod>2026-11-26</lastmod></url>
 </urlset>

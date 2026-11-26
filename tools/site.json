@@ -70,7 +70,7 @@
       "url": "https://kimhoang36.gumroad.com/l/lead-research-kit",
       "free_repo": "lead-research-agents",
       "summary": "Three LangGraph agents research a company, write a personal outreach email and review it. Batch CSV of hundreds of leads, about $0.23 per lead.",
-      "article": null,
+      "article": "langgraph-multi-agent-lead-research-claude",
       "owner": "hoangtrankim"
     },
     {
@@ -81,7 +81,7 @@
       "url": "https://kimhoang36.gumroad.com/l/support-agent-kit",
       "free_repo": "support-agent",
       "summary": "A tool-using support agent with a one-line chat widget, order lookups, and a team inbox where staff take over and hand back. About $0.05 per conversation.",
-      "article": null,
+      "article": "ai-customer-support-agent-tool-use-claude",
       "owner": "hoangtrankim"
     }
   ]
